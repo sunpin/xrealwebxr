@@ -188,16 +188,13 @@ window.addEventListener('xreal-pose-update', (event) => {
   document.getElementById('pos-y').innerText = pose.position.y.toFixed(4);
   document.getElementById('pos-z').innerText = pose.position.z.toFixed(4);
 
-  // クォータニオンからオイラー角(簡略)へ変換してUI表示
-  const qx = pose.orientation.x;
-  const qy = pose.orientation.y;
-  const qz = pose.orientation.z;
-  const qw = pose.orientation.w;
+  // クォータニオンから高精度にオイラー角へ変換してUI表示
+  const THREE_q = new THREE.Quaternion(pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w);
+  const euler = new THREE.Euler().setFromQuaternion(THREE_q, 'YXZ');
   
-  // オイラー角近似
-  const pitch = Math.atan2(2 * (qw * qx + qy * qz), 1 - 2 * (qx * qx + qy * qy)) * 180 / Math.PI;
-  const yaw = Math.asin(2 * (qw * qy - qz * qx)) * 180 / Math.PI;
-  const roll = Math.atan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy * qy + qz * qz)) * 180 / Math.PI;
+  const pitch = euler.x * 180 / Math.PI;
+  const yaw = euler.y * 180 / Math.PI;
+  const roll = euler.z * 180 / Math.PI;
 
   document.getElementById('rot-p').innerText = pitch.toFixed(2) + '°';
   document.getElementById('rot-y').innerText = yaw.toFixed(2) + '°';
@@ -283,6 +280,7 @@ let filterPitch = 0;
 let filterYaw = 0;
 let filterRoll = 0;
 let lastTimestamp = 0;
+let currentOrientation = new THREE.Quaternion(); // 姿勢状態をクォータニオンで保持
 
 
 // ジャイロのキャリブレーション（静止時バイアスの相殺）
@@ -403,6 +401,7 @@ window.addEventListener('xreal-raw-packet', (event) => {
           filterPitch = 0;
           filterYaw = 0;
           filterRoll = 0;
+          currentOrientation.set(0, 0, 0, 1); // 姿勢クォータニオンを無回転(単位元)に初期化
         }
         return; 
       }
@@ -420,31 +419,40 @@ window.addEventListener('xreal-raw-packet', (event) => {
       // 極端なタイムラグや不正値の保護
       if (dt <= 0 || dt > 0.1) return;
       
-      // 4. 姿勢演算 (純粋なジャイロの積分によるトラッキング)
-      // 加速度のノイズや特異点（NaN/180度ジャンプ）を排除するため、加速度による補正をオフにし、
-      // キャリブレーション済みの高精度ジャイロ積分のみで3DoFを追従させます。
-      filterPitch = filterPitch + gx * dt;
-      filterRoll = filterRoll + gz * dt;
-      filterYaw = filterYaw + gy * dt;
+      // 4. 姿勢演算 (純粋なジャイロのローカル回転積分)
+      // ローカル座標系での微小回転量 deltaEuler を作成してクォータニオンに変換
+      // ※順序は一般的な YXZ (Yaw, Pitch, Roll)
+      const deltaEuler = new THREE.Euler(gx * dt, gy * dt, gz * dt, 'YXZ');
+      const q_delta = new THREE.Quaternion().setFromEuler(deltaEuler);
+      
+      // ローカル軸での回転のため、右から乗算（ポストマルチプライ）します
+      currentOrientation.multiply(q_delta);
+      currentOrientation.normalize();
+      
+      // テレメトリおよび表示用にオイラー角を取り出す
+      const eulerDisplay = new THREE.Euler().setFromQuaternion(currentOrientation, 'YXZ');
+      filterPitch = eulerDisplay.x;
+      filterYaw = eulerDisplay.y;
+      filterRoll = eulerDisplay.z;
 
       // デバッグ用：100フレーム（約1秒）に1回、数値をコンソールに出力
       if (Math.random() < 0.01) {
-        console.log("デバッグログ (Float32 Fusion):", {
+        console.log("デバッグログ (Quaternion integration):", {
           "経過時間 (dt)": dt,
-          "計算角度 (Pitch, Yaw, Roll)": [filterPitch, filterYaw, filterRoll]
+          "計算角度 (Pitch, Yaw, Roll)": [
+            (filterPitch * 180 / Math.PI).toFixed(1) + "°",
+            (filterYaw * 180 / Math.PI).toFixed(1) + "°",
+            (filterRoll * 180 / Math.PI).toFixed(1) + "°"
+          ]
         });
       }
       
-      // 5. Three.jsの標準関数を用いて安全にクォータニオンへ変換 (軸の混信を完全排除)
-      // THREE.Eulerの引数順は (x, y, z, order) -> (Pitch, Yaw, Roll, 'YXZ')
-      const THREE_euler = new THREE.Euler(filterPitch, filterYaw, filterRoll, 'YXZ');
-      const THREE_q = new THREE.Quaternion().setFromEuler(THREE_euler);
-
+      // 5. クォータニオンオブジェクトをそのまま同期用形式にコピー
       const q = {
-        x: THREE_q.x,
-        y: THREE_q.y,
-        z: THREE_q.z,
-        w: THREE_q.w
+        x: currentOrientation.x,
+        y: currentOrientation.y,
+        z: currentOrientation.z,
+        w: currentOrientation.w
       };
       
       // 6. ポリフィルに適用 & サーバー経由でブラウザ側に姿勢データを逆同期
