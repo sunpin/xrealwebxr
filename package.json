@@ -1,0 +1,22 @@
+{
+  "name": "xreal-webxr-6dof",
+  "version": "1.0.0",
+  "description": "WebSocket bridge and WebXR Polyfill for Xreal Glasses 6DoF tracking",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.17.1"
+  },
+  "keywords": [
+    "xreal",
+    "webxr",
+    "6dof",
+    "threejs",
+    "websocket"
+  ],
+  "author": "Antigravity",
+  "license": "MIT"
+}

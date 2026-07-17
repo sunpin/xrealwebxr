@@ -1,0 +1,26 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Android Studio / Gradle files
+.gradle/
+build/
+app/build/
+.idea/
+local.properties
+.cxx/
+*.apk
+*.aar
+*.keystore
+
+# Local environment / API credentials
+.env
+.env.local
+credentials.json
