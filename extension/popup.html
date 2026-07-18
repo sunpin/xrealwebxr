@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --panel-bg: rgba(22, 27, 34, 0.85);
+      --accent-cyan: #06b6d4;
+      --accent-pink: #ec4899;
+      --text-color: #c9d1d9;
+      --border-color: rgba(240, 246, 252, 0.1);
+    }
+    
+    body {
+      width: 320px;
+      margin: 0;
+      padding: 16px;
+      background: var(--bg-color);
+      color: var(--text-color);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 14px;
+    }
+
+    h3 {
+      margin: 0 0 16px 0;
+      font-size: 16px;
+      font-weight: 600;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-pink));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .glass-card {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ef4444;
+      box-shadow: 0 0 8px #ef4444;
+      display: inline-block;
+      margin-right: 6px;
+    }
+
+    .status-dot.online {
+      background: #22c55e;
+      box-shadow: 0 0 8px #22c55e;
+    }
+
+    .status-text {
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    /* トグルスイッチスタイル */
+    .switch-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 12px;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #30363d;
+      transition: .3s;
+      border-radius: 24px;
+      border: 1px solid var(--border-color);
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: var(--accent-cyan);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+
+    /* ボタンスタイル */
+    .btn {
+      width: 100%;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-pink));
+      color: white;
+      border: none;
+      padding: 10px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: filter 0.2s, transform 0.1s;
+      box-shadow: 0 3px 8px rgba(6, 182, 212, 0.3);
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.05em;
+    }
+
+    .btn:hover {
+      filter: brightness(1.1);
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    .info-text {
+      font-size: 11px;
+      color: #8b949e;
+      line-height: 1.4;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h3>XREAL WebXR Bridge <span>v1.0</span></h3>
+  
+  <div class="glass-card">
+    <div class="status-row">
+      <span>ローカルブリッジ接続</span>
+      <div style="display: flex; align-items: center;">
+        <span class="status-dot" id="bridge-dot"></span>
+        <span class="status-text" id="bridge-status">OFFLINE</span>
+      </div>
+    </div>
+    <div class="status-row">
+      <span>トラッキングソース</span>
+      <span class="status-text" id="source-name" style="color: var(--accent-cyan);">UNKNOWN</span>
+    </div>
+  </div>
+
+  <div class="glass-card">
+    <div class="switch-row">
+      <span><strong>2D SBS ミラーモード</strong></span>
+      <label class="switch">
+        <input type="checkbox" id="sbs-toggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="info-text">
+      ※グラスを物理的に3Dモード(3840x1080)にしている時にONにすると、通常のWebサイトが左右対称に配置され快適に閲覧できます。
+    </div>
+  </div>
+
+  <button class="btn" id="btn-calibrate">原点リセット</button>
+  
+  <div class="info-text" style="text-align: center; margin-top: 12px;">
+    開発元: Project XrealWebXR
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

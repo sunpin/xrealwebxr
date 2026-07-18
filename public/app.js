@@ -275,31 +275,18 @@ document.addEventListener('DOMContentLoaded', () => {
 let lastPacketBytes = [];
 let lastHexRenderTime = 0; // 描画スロットリング用のタイマー
 
-// センサーフュージョン（姿勢）の状態変数
-let filterPitch = 0;
-let filterYaw = 0;
-let filterRoll = 0;
-let lastTimestamp = 0;
-let currentOrientation = new THREE.Quaternion(); // 姿勢状態をクォータニオンで保持
-
-
-// ジャイロのキャリブレーション（静止時バイアスの相殺）
-let gyroBias = { x: 0, y: 0, z: 0 };
-let calibrationSamples = [];
-let isCalibrating = false;
-
-// キャリブレーション開始
+// キャリブレーション開始 (サーバー側に要求を送信)
 function startGyroCalibration() {
-  isCalibrating = true;
-  calibrationSamples = [];
-  console.log("Starting gyro calibration... Keep glasses still.");
+  console.log("Requesting gyro calibration from server... Keep glasses still.");
+  if (window.XrealWebXR && typeof window.XrealWebXR.send === 'function') {
+    window.XrealWebXR.send({ type: 'calibrate' });
+  }
 }
 
 // ユーザーがキャリブレーションボタンを押したとき
 window.addEventListener('load', () => {
   const calBtn = document.getElementById('btn-calibrate');
   if (calBtn) {
-    // 既存のイベントリスナーは上書きされるか追加される
     calBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       startGyroCalibration();
@@ -341,8 +328,14 @@ window.addEventListener('xreal-raw-packet', (event) => {
           isHeader = true;
         }
         
-        const className = `byte${isChanged ? ' changed' : ''}${isHeader ? ' header' : ''}`;
-        html += `<span class="${className}">${byteHex}</span>`;
+        let colorClass = '';
+        if (isHeader) {
+          colorClass = 'color: var(--accent-pink); font-weight: bold;';
+        } else if (isChanged) {
+          colorClass = 'color: var(--accent-cyan); font-weight: bold; background: rgba(6, 182, 212, 0.15);';
+        }
+        
+        html += `<span class="byte" style="${colorClass}">${byteHex}</span>`;
         
         if ((i + 1) % 16 === 0) {
           html += '<br/>';
@@ -350,118 +343,7 @@ window.addEventListener('xreal-raw-packet', (event) => {
       }
       container.innerHTML = html;
     }
-  }
-  
-  lastPacketBytes = [...lastPacket];
-  
-  // 3. データバッファの構築
-  const buffer = new ArrayBuffer(lastPacket.length);
-  const view = new DataView(buffer);
-  lastPacket.forEach((b, idx) => view.setUint8(idx, b));
-  
-  // 入力されたオフセットを取得 (加速度=46, ジャイロ=34)
-  const accOffset = parseInt(document.getElementById('acc-offset-input').value) || 46;
-  const gyroOffset = parseInt(document.getElementById('gyro-offset-input').value) || 34;
-  
-  try {
-    if (lastPacket.length >= gyroOffset + 12 && lastPacket.length >= accOffset + 12) {
-      // Xrealの内部IMU配置に合わせて軸をマッピング
-      const ax = view.getFloat32(accOffset, true);
-      const ay = view.getFloat32(accOffset + 4, true);
-      const az = view.getFloat32(accOffset + 8, true);
-      
-      let gx = view.getFloat32(gyroOffset, true);      // 1番目のデータ(offset 34)を Pitch (gx) にマップ
-      let gy = -view.getFloat32(gyroOffset + 4, true); // 2番目のデータ(offset 38)を反転させて Yaw (gy) にマップ
-      let gz = -view.getFloat32(gyroOffset + 8, true); // 3番目のデータ(offset 42)を反転させて Roll (gz) にマップ
-      
-      // 【超重要】起動直後の NaN パケットの防御: 1つでも NaN があれば加算をスキップしてスルー
-      if (isNaN(ax) || isNaN(ay) || isNaN(az) || isNaN(gx) || isNaN(gy) || isNaN(gz)) {
-        return;
-      }
-      
-      // デバッグ用ログ：100フレーム（約1秒）に1回出力
-      if (Math.random() < 0.01) {
-        console.log("【XREAL センサーデバッグ】");
-        console.log("  - 加速度 (X, Y, Z):", [ax, ay, az]);
-        console.log("  - ジャイロ (X, Y, Z):", [gx, gy, gz]);
-      }
-
-      // ジャイロのキャリブレーションサンプリング中
-      if (isCalibrating) {
-        calibrationSamples.push({ x: gx, y: gy, z: gz });
-        if (calibrationSamples.length >= 100) {
-          const sumX = calibrationSamples.reduce((sum, s) => sum + s.x, 0);
-          const sumY = calibrationSamples.reduce((sum, s) => sum + s.y, 0);
-          const sumZ = calibrationSamples.reduce((sum, s) => sum + s.z, 0);
-          gyroBias.x = sumX / calibrationSamples.length;
-          gyroBias.y = sumY / calibrationSamples.length;
-          gyroBias.z = sumZ / calibrationSamples.length;
-          isCalibrating = false;
-          console.log("Calibration complete. Gyro bias offsets:", gyroBias);
-          filterPitch = 0;
-          filterYaw = 0;
-          filterRoll = 0;
-          currentOrientation.set(0, 0, 0, 1); // 姿勢クォータニオンを無回転(単位元)に初期化
-        }
-        return; 
-      }
-      
-      // 生の角速度から静止時バイアスを引く
-      gx -= gyroBias.x;
-      gy -= gyroBias.y;
-      gz -= gyroBias.z;
-      
-      // 時間経過（デルタタイム）の計算
-      const now = performance.now();
-      const dt = lastTimestamp ? (now - lastTimestamp) / 1000.0 : 0.01;
-      lastTimestamp = now;
-      
-      // 極端なタイムラグや不正値の保護
-      if (dt <= 0 || dt > 0.1) return;
-      
-      // 4. 姿勢演算 (純粋なジャイロのローカル回転積分)
-      // ローカル座標系での微小回転量 deltaEuler を作成してクォータニオンに変換
-      // ※順序は一般的な YXZ (Yaw, Pitch, Roll)
-      const deltaEuler = new THREE.Euler(gx * dt, gy * dt, gz * dt, 'YXZ');
-      const q_delta = new THREE.Quaternion().setFromEuler(deltaEuler);
-      
-      // ローカル軸での回転のため、右から乗算（ポストマルチプライ）します
-      currentOrientation.multiply(q_delta);
-      currentOrientation.normalize();
-      
-      // テレメトリおよび表示用にオイラー角を取り出す
-      const eulerDisplay = new THREE.Euler().setFromQuaternion(currentOrientation, 'YXZ');
-      filterPitch = eulerDisplay.x;
-      filterYaw = eulerDisplay.y;
-      filterRoll = eulerDisplay.z;
-
-      // デバッグ用：100フレーム（約1秒）に1回、数値をコンソールに出力
-      if (Math.random() < 0.01) {
-        console.log("デバッグログ (Quaternion integration):", {
-          "経過時間 (dt)": dt,
-          "計算角度 (Pitch, Yaw, Roll)": [
-            (filterPitch * 180 / Math.PI).toFixed(1) + "°",
-            (filterYaw * 180 / Math.PI).toFixed(1) + "°",
-            (filterRoll * 180 / Math.PI).toFixed(1) + "°"
-          ]
-        });
-      }
-      
-      // 5. クォータニオンオブジェクトをそのまま同期用形式にコピー
-      const q = {
-        x: currentOrientation.x,
-        y: currentOrientation.y,
-        z: currentOrientation.z,
-        w: currentOrientation.w
-      };
-      
-      // 6. ポリフィルに適用 & サーバー経由でブラウザ側に姿勢データを逆同期
-      if (window.XrealWebXR && typeof window.XrealWebXR.updateOrientation === 'function') {
-        window.XrealWebXR.updateOrientation(q);
-      }
-    }
-  } catch (err) {
-    console.error("Fusion parser error:", err);
+    lastPacketBytes = Array.from(lastPacket);
   }
 });
 
